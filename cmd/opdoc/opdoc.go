@@ -280,9 +280,10 @@ type OpRecord struct {
 	Returns []string `json:",omitempty"`
 	Size    int
 
-	ArgEnum      []string `json:",omitempty"`
-	ArgEnumDoc   []string `json:",omitempty"`
-	ArgEnumTypes []string `json:",omitempty"`
+	ArgEnum      []string        `json:",omitempty"`
+	ArgEnumDoc   []string        `json:",omitempty"`
+	ArgEnumTypes []string        `json:",omitempty"`
+	ArgModes     []logic.RunMode `json:",omitempty"`
 
 	DocCost string
 
@@ -291,6 +292,7 @@ type OpRecord struct {
 	ImmediateNote     []logic.OpImmediateDetails `json:",omitempty"`
 	IntroducedVersion uint64
 	Groups            []string
+	Modes             logic.RunMode
 }
 
 type namedType struct {
@@ -358,22 +360,24 @@ func typeStrings(types logic.StackTypes) []string {
 	return out
 }
 
-func fieldsAndTypes(group logic.FieldGroup, version uint64) ([]string, []string, []string) {
+func fieldsAndTypes(group logic.FieldGroup, version uint64) ([]string, []string, []string, []logic.RunMode) {
 	// reminder: group.Names can be "sparse" See: logic.TxnaFields
 	fields := make([]string, 0, len(group.Names))
 	docs := make([]string, 0, len(group.Names))
 	types := make([]logic.StackType, 0, len(group.Names))
+	modes := make([]logic.RunMode, 0, len(group.Names))
 	for _, name := range group.Names {
 		if spec, ok := group.SpecByName(name); ok && spec.Version() <= version {
 			fields = append(fields, name)
 			types = append(types, spec.Type())
 			docs = append(docs, spec.Note())
+			modes = append(modes, spec.Modes())
 		}
 	}
-	return fields, typeStrings(types), docs
+	return fields, typeStrings(types), docs, modes
 }
 
-func argEnums(name string, version uint64) ([]string, []string, []string) {
+func argEnums(name string, version uint64) ([]string, []string, []string, []logic.RunMode) {
 	// reminder: this needs to be manually updated every time
 	// a new opcode is added with an associated FieldGroup
 	// it'd be nice to have this auto-update
@@ -409,7 +413,7 @@ func argEnums(name string, version uint64) ([]string, []string, []string) {
 	case "ec_add", "ec_scalar_mul", "ec_pairing_check", "ec_multi_scalar_mul", "ec_subgroup_check", "ec_map_to":
 		return fieldsAndTypes(logic.EcGroups, version)
 	default:
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 }
 
@@ -425,12 +429,13 @@ func buildLanguageSpec(opGroups map[string][]string, namedTypes []namedType, ver
 		records[i].Returns = typeStrings(spec.Return.Types)
 		records[i].Size = spec.OpDetails.Size
 		records[i].DocCost = spec.DocCost(version)
-		records[i].ArgEnum, records[i].ArgEnumTypes, records[i].ArgEnumDoc = argEnums(spec.Name, version)
+		records[i].ArgEnum, records[i].ArgEnumTypes, records[i].ArgEnumDoc, records[i].ArgModes = argEnums(spec.Name, version)
 		records[i].Doc = strings.ReplaceAll(logic.OpDoc(spec.Name), "<br />", "\n")
 		records[i].DocExtra = logic.OpDocExtra(spec.Name)
 		records[i].ImmediateNote = logic.OpImmediateDetailsFromSpec(spec)
 		records[i].Groups = opGroups[spec.Name]
 		records[i].IntroducedVersion = spec.Version
+		records[i].Modes = spec.Modes
 	}
 
 	return &LanguageSpec{
